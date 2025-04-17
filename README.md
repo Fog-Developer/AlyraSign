@@ -53,6 +53,18 @@ cargo --version
 cargo 1.85.0 (d73d2caf9 2024-12-31)
 ```
 
+## Authors
+
+* Yannick Jesson
+
+* Mickaël Girondeau
+
+* Gabriel Forestier
+
+## Version History
+
+* 0.1
+    * Initial Release
 
 
 
