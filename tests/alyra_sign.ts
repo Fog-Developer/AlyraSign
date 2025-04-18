@@ -86,41 +86,47 @@ describe("Testing alyra_sign", () => {
 
 
 
-  // it("Create session testing ...", async () => {
-  //   const eventCode = "EV01";
-  //   const sessionId = "S1";
-  //   const sessionTitle = "Smart contracts - part 1";
-  //   const sessionStartAt = new anchor.BN(1500383340);
-  //   const sessionEndAt = new anchor.BN(1500384340);
-  //   const [eventPda, bump_event] = anchor.web3.PublicKey.findProgramAddressSync(
-  //     [Buffer.from("event"), Buffer.from(eventCode)],
-  //     program.programId
-  //   );
+  it("Create session testing ...", async () => {
+    const eventId = new anchor.BN(1);
+    const sessionId = new anchor.BN(1);
+    const sessionTitle = "Smart contracts - part 1";
 
-  //   // const eventAccount = await program.account.event.fetch(eventPda);
-  //   // const sessionsCount = (eventAccount.sessionsCount).add(new anchor.BN(1));
-  //   // console.log(`sessionsCount: ${sessionsCount.toString()}`);
+    const startAtDate = new Date("2025-01-14T18:00:00Z");
+    const sessionStartAt = new anchor.BN(Math.floor(startAtDate.getTime() / 1000));
 
-  //   const [sessionPda, bump] = anchor.web3.PublicKey.findProgramAddressSync(
-  //     [Buffer.from("session"), eventPda.toBuffer(), Buffer.from(sessionId)],
-  //     program.programId
-  //   );
+    const endAtDate = new Date("2025-01-14T20:00:00Z");
+    const sessionEndAt = new anchor.BN(Math.floor(endAtDate.getTime() / 1000));
 
-  //   const tx = await program.methods
-  //     .createSession(sessionId, sessionTitle, sessionStartAt, sessionEndAt)
-  //     .accountsPartial({      /// bien metrte AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
-  //       session: sessionPda,
-  //       event: eventPda,
-  //       signer: provider.wallet.publicKey,
-  //       systemProgram: anchor.web3.SystemProgram.programId,
-  //     })
-  //     .rpc();
+    const [eventPda, bump_event] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("event"), eventId.toBuffer("le", 8)],
+      program.programId
+    );
 
-  //   const sessionAccount = await program.account.session.fetch(sessionPda);
-  //   expect(sessionAccount.sessionId).to.equal(sessionId);
-  //   expect(sessionAccount.title).to.equal(sessionTitle);
-  //   //expect(eventAccount.signer.toString()).to.equal(authority.publicKey.toString());
-  // }); 
+    const eventAccount = await program.account.event.fetch(eventPda);
+
+    const [sessionPda, bump] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("session"), eventPda.toBuffer(), sessionId.toBuffer("le", 8)],
+      program.programId
+    );
+
+    const tx = await program.methods
+      .createSession(sessionId, sessionTitle, sessionStartAt, sessionEndAt)
+      .accountsPartial({      /// bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
+        session: sessionPda,
+        event: eventPda,
+        authority: provider.wallet.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    const newEventAccount = await program.account.event.fetch(eventPda);
+
+    const sessionAccount = await program.account.session.fetch(sessionPda);
+    expect(sessionAccount.sessionId.toString()).to.equal(sessionId.toString());
+    expect(sessionAccount.title).to.equal(sessionTitle);
+    expect(sessionAccount.authority.toString()).to.equal(eventAccount.authority.toString());
+    expect((eventAccount.sessionsCount.add(new anchor.BN(1))).toString()).to.equal(newEventAccount.sessionsCount.toString());
+  }); 
 
 
   

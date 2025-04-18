@@ -58,7 +58,7 @@ pub mod alyra_sign {
 
 
     // Session creation
-    pub fn create_session(ctx: Context<CreateSession>, session_id: String, title: String, start_at: i64, end_at: i64) -> Result<()> {
+    pub fn create_session(ctx: Context<CreateSession>, session_id: u64, title: String, start_at: i64, end_at: i64) -> Result<()> {
         msg!("Creating a session...");
         let session = &mut ctx.accounts.session;
         session.event = ctx.accounts.event.key();
@@ -66,10 +66,13 @@ pub mod alyra_sign {
         session.start_at = start_at;
         session.end_at = end_at;
         session.session_id = session_id;
+        session.authority = ctx.accounts.authority.key();
 
 
         let event = &mut ctx.accounts.event;
-        event.sessions_count += 1;
+        event.sessions_count = event.sessions_count.checked_add(1).ok_or(ProgramError::ArithmeticOverflow)?;
+
+        require!(ctx.accounts.authority.key() == event.authority, SecurityError::WrongAuthority);
 
         Ok(())
     }
@@ -156,14 +159,14 @@ pub struct RegisterAttendee<'info> {
 
 
 #[derive(Accounts)]
-#[instruction(session_id: String, title: String, start_at: i64, end_at: i64)]  // paramètres en entrée
+#[instruction(session_id: u64, title: String, start_at: i64, end_at: i64)]  // paramètres en entrée
 pub struct CreateSession<'info> {
-    #[account(init, payer = signer, space = 8 + Session::INIT_SPACE, seeds = [b"session", event.key().as_ref(), session_id.as_bytes()], bump)] 
+    #[account(init, payer = authority, space = 8 + Session::INIT_SPACE, seeds = [b"session", event.key().as_ref(), session_id.to_le_bytes().as_ref()], bump)] 
     pub session: Account<'info, Session>,
-    #[account(mut, seeds = [b"event", event.event_code.as_bytes()], bump)]
+    #[account(mut, has_one = authority, seeds = [b"event", event.event_id.to_le_bytes().as_ref()], bump)]
     pub event: Account<'info, Event>,
     #[account(mut)] // signer must be mutable
-    pub signer: Signer<'info>, 
+    pub authority: Signer<'info>, 
     pub system_program: Program<'info, System>,
 }
 
@@ -172,7 +175,7 @@ pub struct CreateSession<'info> {
 pub struct CreateClockin<'info> {
     //#[account(init, payer = attendee, space = 8 + Clockin::INIT_SPACE, seeds = [b"clockin", session.key().as_ref(), attendee.key().as_ref()], bump)] 
     //pub clockin: Account<'info, Clockin>,
-    #[account(mut, seeds = [b"session", session.event.as_ref(), session.session_id.as_bytes()], bump)]
+    #[account(mut, seeds = [b"session", session.event.as_ref(), session.session_id.to_le_bytes().as_ref()], bump)]
     pub session: Account<'info, Session>, // modification du nombre de présences
     #[account(mut, seeds = [b"registered_attendee", session.event.as_ref(), attendee.key().as_ref()], bump)]
     pub registered_attendee: Account<'info, RegisteredAttendee>, 
@@ -230,9 +233,9 @@ pub struct RegisteredAttendee {
 #[account]
 #[derive(InitSpace)]
 pub struct Session {
+    authority: Pubkey,
     event: Pubkey,
-    #[max_len(10)]
-    session_id: String,        // id de la session
+    session_id: u64,        // id de la session
     #[max_len(50)]
     title: String,
     start_at: i64,  // timestamp in seconds
