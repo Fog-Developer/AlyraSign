@@ -37,19 +37,21 @@ pub mod alyra_sign {
 
 
     // Registrer attendee
-    pub fn register_attendee(ctx: Context<RegisterAttendee>, first_name: String, last_name: String, email: String) -> Result<()> {
+    pub fn register_attendee(ctx: Context<RegisterAttendee>, attendee_id: u64, attendee_key: Pubkey, first_name: String, last_name: String, email: String) -> Result<()> {
         msg!("Creating a registered attendee...");
-        let registered_attendee = &mut ctx.accounts.registered_attendee;
-        registered_attendee.first_name =  first_name;
-        registered_attendee.last_name =  last_name;
-        registered_attendee.email =  email;
-        registered_attendee.event = ctx.accounts.event.key();
-        registered_attendee.attendee = ctx.accounts.attendee.key();
-        registered_attendee.attendee_id = ctx.accounts.event.attendees_count + 1;
-        registered_attendee.clockin = Vec::new();
+        let attendee = &mut ctx.accounts.attendee;
+        attendee.first_name =  first_name;
+        attendee.last_name =  last_name;
+        attendee.email =  email;
+        attendee.event = ctx.accounts.event.key();
+        attendee.attendee_key = attendee_key;
+        attendee.attendee_id = attendee_id;
+        attendee.clockin = Vec::new();
 
         let event = &mut ctx.accounts.event;
-        event.attendees_count += 1;
+        event.attendees_count = event.attendees_count.checked_add(1).ok_or(ProgramError::ArithmeticOverflow)?;
+
+        require!(ctx.accounts.authority.key() == event.authority, SecurityError::WrongAuthority);
 
         Ok(())
     }
@@ -81,7 +83,7 @@ pub mod alyra_sign {
     // ClockIn creation
     pub fn create_clockin(ctx: Context<CreateClockin>) -> Result<()> {
         msg!("Creating a clock-in...");
-        let registered_attendee = &mut ctx.accounts.registered_attendee;
+        let attendee = &mut ctx.accounts.attendee;
         let current_session = &mut ctx.accounts.session;
         
 
@@ -91,20 +93,11 @@ pub mod alyra_sign {
             sign_at: Clock::get()?.unix_timestamp,
         };
         
-        registered_attendee.clockin.push(clockin);
+        attendee.clockin.push(clockin);
 
-        current_session.clockin_count += 1;
+        current_session.clockin_count = current_session.clockin_count.checked_add(1).ok_or(ProgramError::ArithmeticOverflow)?;
 
-
-       // require!(
-       //     (event.attendees.contains(&ctx.accounts.signer.key())),
-       //     ClockinError::AttendeeNotRegistered
-       // );   
-
-        //require!(
-        //    (event.key() = session.event),
-        //    ClockinError::EventSessionMismatch
-        //);      
+        //require!(ctx.accounts.attendee.attendee_key == attendee.attendee_key, SecurityError::WrongAuthority);
 
         Ok(())
     }    
@@ -144,16 +137,14 @@ pub struct CreateEvent<'info> {
 
 
 #[derive(Accounts)]
-#[instruction(first_name: String, last_name: String, email: String)]  // paramètres en entrée
+#[instruction(attendee_id: u64, attendee_key: Pubkey, first_name: String, last_name: String, email: String)]  // paramètres en entrée
 pub struct RegisterAttendee<'info> {
-    #[account(init, payer = signer, space = 8 + 4388, seeds = [b"registered_attendee", event.key().as_ref(), attendee.key().as_ref(), (event.attendees_count + 1).to_be_bytes().as_ref()], bump)]
-    pub registered_attendee: Account<'info, RegisteredAttendee>,
-    #[account(mut, seeds = [b"event", event.event_code.as_bytes()], bump)]
+    #[account(init, payer = authority, space = 8 + 4388, seeds = [b"attendee", event.key().as_ref(), attendee_key.as_ref(), attendee_id.to_le_bytes().as_ref()], bump)]
+    pub attendee: Account<'info, Attendee>,
+    #[account(mut, seeds = [b"event", event.event_id.to_le_bytes().as_ref()], bump)]
     pub event: Account<'info, Event>,
-    /// CHECK: the existing account of the attendee
-    pub attendee: AccountInfo<'info>,
     #[account(mut)] // signer must be mutable
-    pub signer: Signer<'info>,
+    pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -173,14 +164,12 @@ pub struct CreateSession<'info> {
 
 #[derive(Accounts)]
 pub struct CreateClockin<'info> {
-    //#[account(init, payer = attendee, space = 8 + Clockin::INIT_SPACE, seeds = [b"clockin", session.key().as_ref(), attendee.key().as_ref()], bump)] 
-    //pub clockin: Account<'info, Clockin>,
     #[account(mut, seeds = [b"session", session.event.as_ref(), session.session_id.to_le_bytes().as_ref()], bump)]
     pub session: Account<'info, Session>, // modification du nombre de présences
-    #[account(mut, seeds = [b"registered_attendee", session.event.as_ref(), attendee.key().as_ref()], bump)]
-    pub registered_attendee: Account<'info, RegisteredAttendee>, 
+    #[account(mut, seeds = [b"attendee", session.event.as_ref(), attendee.key().as_ref()], bump)]
+    pub attendee: Account<'info, Attendee>, 
     #[account(mut)] // signer must be mutable
-    pub attendee: Signer<'info>,
+    pub signer: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -216,9 +205,9 @@ pub struct Event {
 
 #[account]
 //#[derive(InitSpace)]
-pub struct RegisteredAttendee {
+pub struct Attendee {
     attendee_id: u64,       // 8
-    attendee: Pubkey,       // 32
+    attendee_key: Pubkey,   // 32
     //#[max_len(50)]
     first_name: String,     // 4 + 50
     //#[max_len(50)]

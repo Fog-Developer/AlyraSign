@@ -97,14 +97,14 @@ describe("Testing alyra_sign", () => {
     const endAtDate = new Date("2025-01-14T20:00:00Z");
     const sessionEndAt = new anchor.BN(Math.floor(endAtDate.getTime() / 1000));
 
-    const [eventPda, bump_event] = anchor.web3.PublicKey.findProgramAddressSync(
+    const [eventPda, bumpEvent] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("event"), eventId.toBuffer("le", 8)],
       program.programId
     );
 
     const eventAccount = await program.account.event.fetch(eventPda);
 
-    const [sessionPda, bump] = anchor.web3.PublicKey.findProgramAddressSync(
+    const [sessionPda, bumpSession] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("session"), eventPda.toBuffer(), sessionId.toBuffer("le", 8)],
       program.programId
     );
@@ -126,6 +126,53 @@ describe("Testing alyra_sign", () => {
     expect(sessionAccount.title).to.equal(sessionTitle);
     expect(sessionAccount.authority.toString()).to.equal(eventAccount.authority.toString());
     expect((eventAccount.sessionsCount.add(new anchor.BN(1))).toString()).to.equal(newEventAccount.sessionsCount.toString());
+  }); 
+
+
+
+
+  it("Register attendee testing ...", async () => {
+    
+    const eventId = new anchor.BN(1);
+
+    const attendeeId = new anchor.BN(5);
+    const firstName = "Elon";
+    const lastName = "Musk";
+    const email = "elon.musk@doge.com";
+    const attendeeKey = (anchor.web3.Keypair.generate()).publicKey;
+
+
+    const [eventPda, bumpEvent] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("event"), eventId.toBuffer("le", 8)],
+      program.programId
+    );
+
+    const eventAccount = await program.account.event.fetch(eventPda);
+
+    const [attendeePda, bumpAttendee] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("attendee"), eventPda.toBuffer(), attendeeKey.toBuffer(), attendeeId.toBuffer("le", 8)],
+      program.programId
+    );
+
+
+    const tx = await program.methods
+      .registerAttendee(attendeeId, attendeeKey, firstName, lastName, email)
+      .accountsPartial({      /// bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
+        attendee: attendeePda,
+        event: eventPda,
+        authority: provider.wallet.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    const newEventAccount = await program.account.event.fetch(eventPda);
+
+    const attendeeAccount = await program.account.attendee.fetch(attendeePda);
+    expect(attendeeAccount.firstName).to.equal(firstName);
+    expect(attendeeAccount.lastName).to.equal(lastName);
+    expect(attendeeAccount.email).to.equal(email);
+    expect(attendeeAccount.attendeeKey.toString()).to.equal(attendeeKey.toString());
+    expect((eventAccount.attendeesCount.add(new anchor.BN(1))).toString()).to.equal(newEventAccount.attendeesCount.toString());
   }); 
 
 
