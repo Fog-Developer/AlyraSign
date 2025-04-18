@@ -6,19 +6,31 @@ declare_id!("FuhRcrvsVAj6iiDvEy5cUuSmsnGKWxdHTbJSod7CU4CS");
 pub mod alyra_sign {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        msg!("Greetings from: {:?}", ctx.program_id);
+    pub fn create_registry(ctx: Context<CreateRegistry>) -> Result<()> {
+        msg!("Creating global registry from: {:?}", ctx.program_id);
+        let registry = &mut ctx.accounts.registry;
+    
+        registry.authority = ctx.accounts.authority.key();
+        registry.events_count = 0;
         Ok(())
     }
 
     // Event creation
-    pub fn create_event(ctx: Context<CreateEvent>, event_code: String, title: String) -> Result<()> {
+    pub fn create_event(ctx: Context<CreateEvent>, event_id: u64, event_code: String, title: String) -> Result<()> {
         msg!("Creating an event...");
         let event = &mut ctx.accounts.event;
+        event.event_id = event_id;
         event.title =  title;
         event.event_code = event_code;
         event.sessions_count = 0;
         event.attendees_count = 0;
+        event.authority = ctx.accounts.authority.key();
+
+
+        let registry = &mut ctx.accounts.registry;
+        registry.events_count = registry.events_count.checked_add(1).ok_or(ProgramError::ArithmeticOverflow)?;
+
+        require!(ctx.accounts.authority.key() == registry.authority, SecurityError::WrongAuthority);
 
         Ok(())
     }
@@ -99,15 +111,31 @@ pub mod alyra_sign {
 // derive(Accounts)
 
 #[derive(Accounts)]
-pub struct Initialize {}
+pub struct CreateRegistry<'info> {
+    #[account(init, payer = authority, space = 8 + Registry::INIT_SPACE, seeds = [b"alyra_sign", authority.key().as_ref()], bump)] 
+    pub registry: Account<'info, Registry>,
+    #[account(mut)] // signer must be mutable
+    pub authority: Signer<'info>, 
+    pub system_program: Program<'info, System>,
+}
+
+
 
 #[derive(Accounts)]
-#[instruction(event_code: String, title: String)]  // paramètres en entrée
+#[instruction(event_id: u64, event_code: String, title: String)]  // paramètres en entrée
 pub struct CreateEvent<'info> {
-    #[account(init, payer = signer, space = 8 + Event::INIT_SPACE, seeds = [b"event", event_code.as_bytes()], bump)]
+    #[account(init, payer = authority, space = 8 + Event::INIT_SPACE, seeds = [b"event", event_id.to_le_bytes().as_ref()], bump)]
     pub event: Account<'info, Event>,
+    #[account(
+        mut,
+        has_one = authority,
+        seeds = [b"alyra_sign", authority.key().as_ref()],
+        bump
+    )]
+    pub registry: Account<'info, Registry>,      
+
     #[account(mut)] // signer must be mutable
-    pub signer: Signer<'info>,
+    pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -155,17 +183,29 @@ pub struct CreateClockin<'info> {
 
 
 
+
+
 // ajouter add_attendee / remove_attendee / update_session / update_event / clock_in
 
 // accounts
 
 #[account]
 #[derive(InitSpace)]
+pub struct Registry {
+    authority: Pubkey,
+    events_count: u64,
+}
+
+
+#[account]
+#[derive(InitSpace)]
 pub struct Event {
+    event_id: u64,
     #[max_len(50)]
     title: String, 
     #[max_len(10)]
     event_code: String, 
+    authority: Pubkey,
     sessions_count: u64,
     attendees_count: u64,
 }
@@ -200,6 +240,8 @@ pub struct Session {
     clockin_count: u64, //nb de participants 
 }
 
+
+
 //#[account]
 //#[derive(InitSpace)]
 //pub struct Clockin {
@@ -226,3 +268,11 @@ pub struct Clockin {
 //    #[msg("Session's event mismatch.")]
 //    EventSessionMismatch,
 //}
+
+#[error_code]
+pub enum SecurityError {
+   #[msg("You are not a registered attendee for this event.")]
+   AttendeeNotRegistered,
+   #[msg("You are not the expected authority.")]
+   WrongAuthority,
+}
