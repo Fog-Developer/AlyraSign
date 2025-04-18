@@ -46,7 +46,7 @@ pub mod alyra_sign {
         attendee.event = ctx.accounts.event.key();
         attendee.attendee_key = attendee_key;
         attendee.attendee_id = attendee_id;
-        attendee.clockin = Vec::new();
+        attendee.clockins = Vec::new();
 
         let event = &mut ctx.accounts.event;
         event.attendees_count = event.attendees_count.checked_add(1).ok_or(ProgramError::ArithmeticOverflow)?;
@@ -69,6 +69,7 @@ pub mod alyra_sign {
         session.end_at = end_at;
         session.session_id = session_id;
         session.authority = ctx.accounts.authority.key();
+        session.clockins_count = 0;
 
 
         let event = &mut ctx.accounts.event;
@@ -85,6 +86,7 @@ pub mod alyra_sign {
         msg!("Creating a clock-in...");
         let attendee = &mut ctx.accounts.attendee;
         let current_session = &mut ctx.accounts.session;
+        let signer = &ctx.accounts.signer;
         
 
         let clockin = Clockin {
@@ -93,11 +95,11 @@ pub mod alyra_sign {
             sign_at: Clock::get()?.unix_timestamp,
         };
         
-        attendee.clockin.push(clockin);
+        attendee.clockins.push(clockin);
 
-        current_session.clockin_count = current_session.clockin_count.checked_add(1).ok_or(ProgramError::ArithmeticOverflow)?;
+        current_session.clockins_count = current_session.clockins_count.checked_add(1).ok_or(ProgramError::ArithmeticOverflow)?;
 
-        //require!(ctx.accounts.attendee.attendee_key == attendee.attendee_key, SecurityError::WrongAuthority);
+        require!(ctx.accounts.attendee.attendee_key == signer.key(), SecurityError::WrongAuthority);
 
         Ok(())
     }    
@@ -139,7 +141,7 @@ pub struct CreateEvent<'info> {
 #[derive(Accounts)]
 #[instruction(attendee_id: u64, attendee_key: Pubkey, first_name: String, last_name: String, email: String)]  // paramètres en entrée
 pub struct RegisterAttendee<'info> {
-    #[account(init, payer = authority, space = 8 + 4388, seeds = [b"attendee", event.key().as_ref(), attendee_key.as_ref(), attendee_id.to_le_bytes().as_ref()], bump)]
+    #[account(init, payer = authority, space = 8 + 4388, seeds = [b"attendee", event.key().as_ref(), attendee_id.to_le_bytes().as_ref()], bump)]
     pub attendee: Account<'info, Attendee>,
     #[account(mut, seeds = [b"event", event.event_id.to_le_bytes().as_ref()], bump)]
     pub event: Account<'info, Event>,
@@ -166,7 +168,7 @@ pub struct CreateSession<'info> {
 pub struct CreateClockin<'info> {
     #[account(mut, seeds = [b"session", session.event.as_ref(), session.session_id.to_le_bytes().as_ref()], bump)]
     pub session: Account<'info, Session>, // modification du nombre de présences
-    #[account(mut, seeds = [b"attendee", session.event.as_ref(), attendee.key().as_ref()], bump)]
+    #[account(mut, seeds = [b"attendee", session.event.as_ref(), attendee.attendee_key.as_ref(), attendee.attendee_id.to_le_bytes().as_ref()], bump)]
     pub attendee: Account<'info, Attendee>, 
     #[account(mut)] // signer must be mutable
     pub signer: Signer<'info>,
@@ -216,7 +218,7 @@ pub struct Attendee {
     email: String,          // 4 + 100
     event: Pubkey,          // 32
     //#[max_len(100, 41)]
-    clockin: Vec<Clockin>,  // 4 + (100 * 41) = 4104  --> total : 4388
+    clockins: Vec<Clockin>,  // 4 + (100 * 41) = 4104  --> total : 4388
 }
 
 #[account]
@@ -229,7 +231,7 @@ pub struct Session {
     title: String,
     start_at: i64,  // timestamp in seconds
     end_at: i64,    // timestamp in seconds
-    clockin_count: u64, //nb de participants 
+    clockins_count: u64, //nb de participants 
 }
 
 
