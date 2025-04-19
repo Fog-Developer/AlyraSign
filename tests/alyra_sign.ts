@@ -12,14 +12,10 @@ describe("Testing alyra_sign", () => {
 
   const program = anchor.workspace.AlyraSign as Program<AlyraSign>;
 
-    // Stocker le keypair du participant pour l'utiliser dans le test de clockin
+    // Stocker la keypair du participant de façon globale
   let attendeeKeypair: anchor.web3.Keypair;
 
-  // it("Is initialized!", async () => {
-  //   // Add your test here.
-  //   const tx = await program.methods.initialize().rpc();
-  //   console.log("Your transaction signature", tx);
-  // });
+
 
 
   it("Create Global Regitry testing ...", async () => {
@@ -31,7 +27,7 @@ describe("Testing alyra_sign", () => {
 
     const tx = await program.methods
       .createRegistry()
-      .accountsPartial({      /// bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
+      .accountsPartial({      // bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
         registry: registryPda,
         authority: provider.wallet.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -69,7 +65,7 @@ describe("Testing alyra_sign", () => {
 
     const tx = await program.methods
       .createEvent(eventId, eventCode, eventTitle)
-      .accountsPartial({      /// bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
+      .accountsPartial({      // bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
         authority: provider.wallet.publicKey,
         event: eventPda,
         registry: registryPda,
@@ -114,7 +110,7 @@ describe("Testing alyra_sign", () => {
 
     const tx = await program.methods
       .createSession(sessionId, sessionTitle, sessionStartAt, sessionEndAt)
-      .accountsPartial({      /// bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
+      .accountsPartial({      // bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
         session: sessionPda,
         event: eventPda,
         authority: provider.wallet.publicKey,
@@ -170,7 +166,7 @@ describe("Testing alyra_sign", () => {
 
     const tx = await program.methods
       .registerAttendee(attendeeId, attendeeKey, firstName, lastName, email)
-      .accountsPartial({      /// bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
+      .accountsPartial({      // bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
         attendee: attendeePda,
         event: eventPda,
         authority: provider.wallet.publicKey,
@@ -205,7 +201,6 @@ describe("Testing alyra_sign", () => {
       program.programId
     );
 
-    // Corriger les seeds pour le PDA du participant
     const [attendeePda, bumpAttendee] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("attendee"), eventPda.toBuffer(), attendeeId.toArrayLike(Buffer, "le", 8)],
       program.programId
@@ -214,7 +209,6 @@ describe("Testing alyra_sign", () => {
     const attendeeAccount = await program.account.attendee.fetch(attendeePda);
     const sessionAccount = await program.account.session.fetch(sessionPda);
 
-    // Utiliser le keypair du participant stocké précédemment
     const tx = await program.methods
       .createClockin()
       .accountsPartial({

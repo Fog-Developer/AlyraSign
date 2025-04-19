@@ -176,10 +176,7 @@ pub struct CreateClockin<'info> {
 }
 
 
-
-
-
-// ajouter add_attendee / remove_attendee / update_session / update_event / clock_in
+// ajouter remove_attendee / update_session / update_event
 
 // accounts
 
