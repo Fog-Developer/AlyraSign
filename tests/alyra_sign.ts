@@ -12,6 +12,9 @@ describe("Testing alyra_sign", () => {
 
   const program = anchor.workspace.AlyraSign as Program<AlyraSign>;
 
+    // Stocker le keypair du participant pour l'utiliser dans le test de clockin
+  let attendeeKeypair: anchor.web3.Keypair;
+
   // it("Is initialized!", async () => {
   //   // Add your test here.
   //   const tx = await program.methods.initialize().rpc();
@@ -139,7 +142,17 @@ describe("Testing alyra_sign", () => {
     const firstName = "Elon";
     const lastName = "Musk";
     const email = "elon.musk@doge.com";
-    const attendeeKey = (anchor.web3.Keypair.generate()).publicKey;
+  
+    // Générer un keypair pour le participant et le stocker
+    attendeeKeypair = anchor.web3.Keypair.generate();
+    const attendeeKey = attendeeKeypair.publicKey;
+
+    // Transférer des SOL au participant pour payer les frais de transaction
+    const airdropSignature = await provider.connection.requestAirdrop(
+      attendeeKey,
+      1 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(airdropSignature);
 
 
     const [eventPda, bumpEvent] = anchor.web3.PublicKey.findProgramAddressSync(
@@ -178,44 +191,53 @@ describe("Testing alyra_sign", () => {
 
 
   it("Clockin testing ...", async () => {
+    const eventId = new anchor.BN(1);
+    const sessionId = new anchor.BN(1);
+    const attendeeId = new anchor.BN(5);
 
-    // const eventId = new anchor.BN(1);
-    // const sessionId = new anchor.BN(1);
-    // const attendeeId = new anchor.BN(5);
+    const [eventPda, bumpEvent] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("event"), eventId.toBuffer("le", 8)],
+      program.programId
+    );
 
-    // const [eventPda, bumpEvent] = anchor.web3.PublicKey.findProgramAddressSync(
-    //   [Buffer.from("event"), eventId.toBuffer("le", 8)],
-    //   program.programId
-    // );
+    const [sessionPda, bumpSession] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("session"), eventPda.toBuffer(), sessionId.toBuffer("le", 8)],
+      program.programId
+    );
 
-    // const [sessionPda, bumpSession] = anchor.web3.PublicKey.findProgramAddressSync(
-    //   [Buffer.from("session"), eventPda.toBuffer(), sessionId.toBuffer("le", 8)],
-    //   program.programId
-    // );
+    // Corriger les seeds pour le PDA du participant
+    const [attendeePda, bumpAttendee] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("attendee"), eventPda.toBuffer(), attendeeId.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    );
 
+    const attendeeAccount = await program.account.attendee.fetch(attendeePda);
+    const sessionAccount = await program.account.session.fetch(sessionPda);
 
-    // const [attendeePda, bumpAttendee] = anchor.web3.PublicKey.findProgramAddressSync(
-    //   [Buffer.from("attendee"), eventPda.toBuffer(), attendeeId.toBuffer("le", 8)],
-    //   program.programId
-    // );
-    // const attendeeAccount = await program.account.attendee.fetch(attendeePda);
+    // Utiliser le keypair du participant stocké précédemment
+    const tx = await program.methods
+      .createClockin()
+      .accountsPartial({
+        attendee: attendeePda,
+        session: sessionPda,
+        signer: attendeeKeypair.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([attendeeKeypair])
+      .rpc();
 
-    // const tx = await program.methods
-    //   .createClockin()
-    //   .accountsPartial({      /// bien mettre AccountsPartial depuis la version 0.30 car elle tente de résoudre les noms automatiquement
-    //     attendee: attendeePda,
-    //     session: sessionPda,
-    //     signer: attendeeAccount.attendeeKey,
-    //     systemProgram: anchor.web3.SystemProgram.programId,
-    //   })
-    //   .rpc();
+    const newSessionAccount = await program.account.session.fetch(sessionPda);
+    const newAttendeeAccount = await program.account.attendee.fetch(attendeePda);
 
-    // const newSessionAccount = await program.account.session.fetch(sessionPda);
-
-    // const newAttendeeAccount = await program.account.attendee.fetch(attendeePda);
-    // expect(newAttendeeAccount.clockins[0].session.toString()).to.equal(sessionPda.toString());
-    // expect(newAttendeeAccount.clockins[0].isPresent).to.be.true;
-    // expect((newSessionAccount.clockinsCount.add(new anchor.BN(1))).toString()).to.equal(newSessionAccount.clockinsCount.toString());
+    // Vérifier que le clockin a été correctement enregistré
+    expect(newAttendeeAccount.clockins[0].session.toString()).to.equal(sessionPda.toString());
+    expect(newAttendeeAccount.clockins[0].isPresent).to.be.true;
+    expect(newAttendeeAccount.clockins[0].signAt).to.be.instanceOf(anchor.BN);
+    
+    // Vérifier que le compteur de clockins de la session a été incrémenté
+    expect(newSessionAccount.clockinsCount.toString()).to.equal(
+      sessionAccount.clockinsCount.add(new anchor.BN(1)).toString()
+    );
   }); 
 
 

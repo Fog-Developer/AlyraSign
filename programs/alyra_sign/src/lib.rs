@@ -168,7 +168,7 @@ pub struct CreateSession<'info> {
 pub struct CreateClockin<'info> {
     #[account(mut, seeds = [b"session", session.event.as_ref(), session.session_id.to_le_bytes().as_ref()], bump)]
     pub session: Account<'info, Session>, // modification du nombre de présences
-    #[account(mut, seeds = [b"attendee", session.event.as_ref(), attendee.attendee_key.as_ref(), attendee.attendee_id.to_le_bytes().as_ref()], bump)]
+    #[account(mut, seeds = [b"attendee", session.event.as_ref(), attendee.attendee_id.to_le_bytes().as_ref()], bump)]
     pub attendee: Account<'info, Attendee>, 
     #[account(mut)] // signer must be mutable
     pub signer: Signer<'info>,
